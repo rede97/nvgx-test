@@ -11,6 +11,7 @@ use winit::{
     event::{KeyEvent, WindowEvent},
     event_loop::EventLoop,
     keyboard::{Key, NamedKey, PhysicalKey},
+    platform::windows::WindowAttributesExtWindows,
     window::{Window, WindowAttributes},
 };
 
@@ -21,6 +22,7 @@ pub fn run<D: Demo<nvgx_wgpu::Renderer>>(demo: D, title: &str) {
             super::DEFAULT_SIZE.0,
             super::DEFAULT_SIZE.1,
         ))
+        .with_drag_and_drop(false)
         .with_title(format!("{} (WGPU)", title));
     let mut app = App::new(demo, attributes);
     event_loop.run_app(&mut app).expect("failed to run app");
@@ -150,7 +152,7 @@ impl<D: Demo<nvgx_wgpu::Renderer>> ApplicationHandler for App<D> {
 
                     context.save();
                     let duration = Instant::now() - self.start_time;
-                    if duration.as_millis() > 20 {
+                    if duration.as_millis() > 1000 {
                         let fps = (self.frame_count as f32) / duration.as_secs_f32();
                         #[cfg(feature = "save-fps")]
                         self.save_fps.push(fps);
@@ -218,12 +220,14 @@ impl AppState {
         let caps = surface.get_capabilities(adapter);
         let config = RenderConfig::default();
 
-
         let pos = caps
             .formats
             .iter()
             .position(|f| f == &config.format)
-            .expect(&format!("Surface texture format: `{:?}` not support", &config.format));
+            .expect(&format!(
+                "Surface texture format: `{:?}` not support",
+                &config.format
+            ));
         let surface_config: wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>> =
             wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

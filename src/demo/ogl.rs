@@ -17,6 +17,7 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowAttributes};
+use winit::platform::windows::WindowAttributesExtWindows;
 
 use glutin::config::{Config, ConfigTemplateBuilder, GetGlConfig};
 use glutin::context::{
@@ -27,14 +28,15 @@ use glutin::prelude::*;
 use glutin::surface::{Surface, WindowSurface};
 
 use glutin_winit::{DisplayBuilder, GlWindow};
-
 pub fn run<D: Demo<nvgx_ogl::Renderer>>(demo: D, title: &str) {
     let event_loop = EventLoop::new().unwrap();
     let template = ConfigTemplateBuilder::new()
         .with_alpha_size(8)
         .with_transparency(true);
 
-    let attributes = window_attributes().with_title(format!("{} (OpenGL)", title));
+    let attributes = window_attributes()
+        .with_drag_and_drop(false)
+        .with_title(format!("{} (OpenGL)", title));
 
     let mut app = App::new(template, attributes, demo);
     event_loop.run_app(&mut app).unwrap();
@@ -296,7 +298,7 @@ impl<D: Demo<nvgx_ogl::Renderer>> ApplicationHandler for App<D> {
 
                     context.save();
                     let duration = Instant::now() - self.start_time;
-                    if duration.as_millis() > 20 {
+                    if duration.as_millis() > 1000 {
                         let fps = (self.frame_count as f32) / duration.as_secs_f32();
                         #[cfg(feature = "save-fps")]
                         self.save_fps.push(fps);
