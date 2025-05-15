@@ -6,6 +6,20 @@ mod demo;
 use anyhow::Error;
 use nvgx::*;
 
+fn fill_size(img_size: (u32, u32), win_size: (u32, u32)) -> (f32, f32) {
+    if img_size.0 >= img_size.1 {
+        let ratio = img_size.1 as f32 / img_size.0 as f32;
+        let height = f32::min(win_size.0 as f32 * ratio, win_size.1 as f32);
+        let width = height / ratio;
+        return (width, height);
+    } else {
+        let ratio = img_size.0 as f32 / img_size.1 as f32;
+        let width = f32::min(win_size.1 as f32 * ratio, win_size.0 as f32);
+        let height = width / ratio;
+        return (width, height);
+    }
+}
+
 struct DemoDraw {
     img_size: Option<(ImageId, (u32, u32))>,
     img: Option<ImageId>,
@@ -31,34 +45,40 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
         let img_size = if let Some((img, img_size)) = self.img_size {
             let img = if img_size != cap_size {
                 ctx.delete_image(img)?;
-                ctx.create_image_rgba(
+                ctx.create_image(
                     cap_size.0,
                     cap_size.1,
+                    TextureType::BGRA,
                     ImageFlags::REPEATX | ImageFlags::REPEATY,
                     Some(frame.data().data_u8()),
                 )?
             } else {
-                ctx.update_image(img, frame.data().data_u8())?;
+                ctx.update_image(img, frame.data().data_u8(), None)?;
                 img
             };
             (img, cap_size)
         } else {
-            let img = ctx.create_image_rgba(
+            let img = ctx.create_image(
                 cap_size.0,
                 cap_size.1,
+                TextureType::BGRA,
                 ImageFlags::REPEATX | ImageFlags::REPEATY,
                 Some(frame.data().data_u8()),
             )?;
             (img, cap_size)
         };
         self.img_size = Some(img_size);
+        let fill_size = fill_size(img_size.1, (width as u32, height as u32));
+        let xy = ((width - fill_size.0) / 2.0, (height - fill_size.1) / 2.0);
+        let square_width = f32::min(fill_size.0, fill_size.1);
+        let square_xy = ((width - square_width) / 2.0, (height - square_width) / 2.0);
 
         ctx.begin_path();
         ctx.fill_paint({
             ImagePattern {
                 img: img_size.0,
-                center: (0, 0).into(),
-                size: cap_size.into(),
+                center: xy.into(),
+                size: fill_size.into(),
                 angle: 0.0,
                 alpha: 1.0,
             }
@@ -71,10 +91,18 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
         //     alpha: 0.8,
         // });
         ctx.rect(Rect {
-            xy: (0, 0).into(),
-            size: (width, height).into(),
+            xy: xy.into(),
+            size: fill_size.into(),
         });
         ctx.fill()?;
+
+        ctx.begin_path();
+        ctx.rect(Rect {
+            xy: square_xy.into(),
+            size: (square_width, square_width).into(),
+        });
+        ctx.stroke_paint(nvgx::Color::rgb(0.4, 0.6, 0.9));
+        ctx.stroke()?;
 
         Ok(())
     }

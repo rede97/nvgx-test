@@ -223,7 +223,7 @@ impl AppState {
         let pos = caps
             .formats
             .iter()
-            .position(|f| f == &config.format)
+            .position(|f| config.format_match(f))
             .expect(&format!(
                 "Surface texture format: `{:?}` not support",
                 &config.format
