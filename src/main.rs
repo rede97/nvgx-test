@@ -3,35 +3,37 @@
 extern crate anyhow;
 
 mod demo;
-use anyhow::Error;
-use nvgx::*;
+mod yolov5_face;
 
-fn fill_size(img_size: (u32, u32), win_size: (u32, u32)) -> (f32, f32) {
-    if img_size.0 >= img_size.1 {
-        let ratio = img_size.1 as f32 / img_size.0 as f32;
-        let height = f32::min(win_size.0 as f32 * ratio, win_size.1 as f32);
-        let width = height / ratio;
-        return (width, height);
+use anyhow::Error;
+use fast_image_resize::{PixelType, images::ImageRef};
+use num_traits::AsPrimitive;
+use nvgx::*;
+use yolov5_face::YoloV5Face;
+
+fn padding_fit_img<N1: AsPrimitive<f32>, N2: AsPrimitive<f32>>(
+    img_size: (N1, N1),
+    display_size: (N2, N2),
+) -> (f32, f32) {
+    let img_size: (f32, f32) = (img_size.0.as_(), img_size.1.as_());
+    let display_size: (f32, f32) = (display_size.0.as_(), display_size.1.as_());
+    let fit_width = display_size.1 * img_size.0 / img_size.1;
+    if fit_width <= display_size.0 {
+        return (fit_width, display_size.1);
     } else {
-        let ratio = img_size.0 as f32 / img_size.1 as f32;
-        let width = f32::min(win_size.1 as f32 * ratio, win_size.0 as f32);
-        let height = width / ratio;
-        return (width, height);
+        return (display_size.0, display_size.0 * img_size.1 / img_size.0);
     }
 }
 
 struct DemoDraw {
     img_size: Option<(ImageId, (u32, u32))>,
-    img: Option<ImageId>,
     camera: kamera::Camera,
+    yolov5n_face: YoloV5Face,
 }
 
 impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
     fn init(&mut self, ctx: &mut Context<R>, _scale_factor: f32) -> Result<(), Error> {
         ctx.create_font_from_file("roboto", demo::FONT_PATH)?;
-        self.img = Some(
-            ctx.create_image_from_file(ImageFlags::REPEATX | ImageFlags::REPEATY, demo::IMG_PATH)?,
-        );
         self.camera.start();
         Ok(())
     }
@@ -67,8 +69,14 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             )?;
             (img, cap_size)
         };
+
+        let buffer = frame.data();
+        let src_img =
+            ImageRef::new(cap_size.0, cap_size.1, buffer.data_u8(), PixelType::U8x3).unwrap();
+        self.yolov5n_face.proc(&src_img).unwrap();
+
         self.img_size = Some(img_size);
-        let fill_size = fill_size(img_size.1, (width as u32, height as u32));
+        let fill_size = padding_fit_img(img_size.1, (width, height));
         let xy = ((width - fill_size.0) / 2.0, (height - fill_size.1) / 2.0);
         let square_width = f32::min(fill_size.0, fill_size.1);
         let square_xy = ((width - square_width) / 2.0, (height - square_width) / 2.0);
@@ -83,13 +91,6 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
                 alpha: 1.0,
             }
         });
-        // ctx.fill_paint(ImagePattern {
-        //     img: self.img.unwrap(),
-        //     center: (0.0, 0.0).into(),
-        //     size: (200.0, 200.0).into(),
-        //     angle: 0.0,
-        //     alpha: 0.8,
-        // });
         ctx.rect(Rect {
             xy: xy.into(),
             size: fill_size.into(),
@@ -101,7 +102,7 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             xy: square_xy.into(),
             size: (square_width, square_width).into(),
         });
-        ctx.stroke_paint(nvgx::Color::rgb(0.4, 0.6, 0.9));
+        ctx.stroke_paint(nvgx::Color::rgb(1.0, 0.4, 0.3));
         ctx.stroke()?;
 
         Ok(())
@@ -112,8 +113,8 @@ fn main() {
     demo::run(
         DemoDraw {
             img_size: None,
-            img: None,
             camera: kamera::Camera::new_default_device(),
+            yolov5n_face: YoloV5Face::new("weights/yolov5n-face-relu.onnx").unwrap(),
         },
         "demo-draw",
     );
