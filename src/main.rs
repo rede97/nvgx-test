@@ -1,7 +1,3 @@
-#[macro_use]
-#[allow(unused)]
-extern crate anyhow;
-
 mod demo;
 mod yolov5_face;
 
@@ -42,49 +38,60 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
         let Some(frame) = self.camera.wait_for_frame() else {
             return Ok(());
         };
+        let frame_data = frame.data();
 
         let cap_size = frame.size_u32();
-        let img_size = if let Some((img, img_size)) = self.img_size {
-            let img = if img_size != cap_size {
+
+        let img_update = match self.img_size {
+            Some((img, img_size)) if img_size == cap_size => {
+                ctx.update_image(img, frame_data.data_u8(), None)?;
+                Some(img)
+            }
+            Some((img, _)) => {
                 ctx.delete_image(img)?;
-                ctx.create_image(
+                None
+            }
+            _ => None,
+        };
+        let img = match img_update {
+            Some(img) => img,
+            _ => {
+                let img = ctx.create_image(
                     cap_size.0,
                     cap_size.1,
                     TextureType::BGRA,
                     ImageFlags::REPEATX | ImageFlags::REPEATY,
-                    Some(frame.data().data_u8()),
-                )?
-            } else {
-                ctx.update_image(img, frame.data().data_u8(), None)?;
+                    Some(frame_data.data_u8()),
+                )?;
                 img
-            };
-            (img, cap_size)
-        } else {
-            let img = ctx.create_image(
-                cap_size.0,
-                cap_size.1,
-                TextureType::BGRA,
-                ImageFlags::REPEATX | ImageFlags::REPEATY,
-                Some(frame.data().data_u8()),
-            )?;
-            (img, cap_size)
+            }
         };
+        self.img_size = Some((img, cap_size));
 
-        let buffer = frame.data();
-        let src_img =
-            ImageRef::new(cap_size.0, cap_size.1, buffer.data_u8(), PixelType::U8x3).unwrap();
-        self.yolov5n_face.proc(&src_img).unwrap();
-
-        self.img_size = Some(img_size);
-        let fill_size = padding_fit_img(img_size.1, (width, height));
+        let fill_size = padding_fit_img(cap_size, (width, height));
         let xy = ((width - fill_size.0) / 2.0, (height - fill_size.1) / 2.0);
         let square_width = f32::min(fill_size.0, fill_size.1);
         let square_xy = ((width - square_width) / 2.0, (height - square_width) / 2.0);
 
+        let faces = {
+            let src_img = ImageRef::new(
+                cap_size.0,
+                cap_size.1,
+                frame_data.data_u8(),
+                PixelType::U8x4,
+            )?;
+            let pos_scale = (
+                square_width / self.yolov5n_face.input_shape.0 as f32,
+                square_width / self.yolov5n_face.input_shape.1 as f32,
+            );
+            self.yolov5n_face
+                .proc_image(&src_img, 0.6, 0.5, pos_scale)?
+        };
+
         ctx.begin_path();
         ctx.fill_paint({
             ImagePattern {
-                img: img_size.0,
+                img,
                 center: xy.into(),
                 size: fill_size.into(),
                 angle: 0.0,
@@ -98,13 +105,24 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
         ctx.fill()?;
 
         ctx.begin_path();
+        ctx.rect((0.0, 0.0, width, height));
         ctx.rect(Rect {
             xy: square_xy.into(),
             size: (square_width, square_width).into(),
         });
-        ctx.stroke_paint(nvgx::Color::rgb(1.0, 0.4, 0.3));
-        ctx.stroke()?;
+        ctx.path_winding(WindingSolidity::Hole);
+        ctx.fill_paint(nvgx::Color::rgba(1.0, 1.0, 1.0, 0.2));
+        ctx.fill()?;
 
+        ctx.save();
+        ctx.stroke_paint(nvgx::Color::rgb_i(0x00, 0xBF, 0xA8));
+        ctx.translate(square_xy.0, square_xy.1);
+        for face in faces {
+            ctx.begin_path();
+            ctx.rect(face.bbox);
+            ctx.stroke()?;
+        }
+        ctx.restore();
         Ok(())
     }
 }

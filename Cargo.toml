@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["wgpu", "wirelines"]
+default = ["ogl", "wirelines"]
 wgpu = ["nvgx-wgpu"]
 ogl = ["nvgx-ogl"]
 wirelines = ["nvgx/wirelines"]
@@ -12,7 +12,7 @@ example-single-inst = []
 save-fps = []
 
 [dependencies]
-nvgx = "0.3"
+nvgx = { version = "0.3.3" }
 nvgx-wgpu = { version = "0.3", optional = true }
 nvgx-ogl = { version = "0.3", optional = true }
 cfg-if = "1.0.0"
