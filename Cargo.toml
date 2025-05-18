@@ -31,7 +31,9 @@ glutin = "0.32.3"
 kamera = "0.0.2"
 image = "0.25.6"
 fast_image_resize = { version = "5.1.4", features = ["image"] }
-ort = "2.0.0-rc.9"
+ort = { path = "../ort", features = ["load-dynamic"] }
 num-traits = "0.2.19"
 ndarray = { version = "0.16.1", features = ["rayon"] }
 rayon = "1.10.0"
+tracy-client = "0.18.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

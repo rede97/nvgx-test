@@ -7,6 +7,8 @@ use num_traits::AsPrimitive;
 use nvgx::*;
 use yolov5_face::YoloV5Face;
 
+use tracy_client::{Client, span};
+
 fn padding_fit_img<N1: AsPrimitive<f32>, N2: AsPrimitive<f32>>(
     img_size: (N1, N1),
     display_size: (N2, N2),
@@ -35,38 +37,49 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
     }
 
     fn update(&mut self, width: f32, height: f32, ctx: &mut Context<R>) -> anyhow::Result<()> {
-        let Some(frame) = self.camera.wait_for_frame() else {
-            return Ok(());
+        let _update_zone = span!("Frame");
+        _update_zone.emit_color(0xeeeeff);
+        let frame = {
+            let _camera = span!("Camera");
+            let Some(frame) = self.camera.wait_for_frame() else {
+                return Ok(());
+            };
+            frame
         };
         let frame_data = frame.data();
 
         let cap_size = frame.size_u32();
 
-        let img_update = match self.img_size {
-            Some((img, img_size)) if img_size == cap_size => {
-                ctx.update_image(img, frame_data.data_u8(), None)?;
-                Some(img)
-            }
-            Some((img, _)) => {
-                ctx.delete_image(img)?;
-                None
-            }
-            _ => None,
+        let img = {
+            let _update_img = span!("Update Img");
+            _update_img.emit_color(0xff2020);
+            let img_update = match self.img_size {
+                Some((img, img_size)) if img_size == cap_size => {
+                    ctx.update_image(img, frame_data.data_u8(), None)?;
+                    Some(img)
+                }
+                Some((img, _)) => {
+                    ctx.delete_image(img)?;
+                    None
+                }
+                _ => None,
+            };
+            let img = match img_update {
+                Some(img) => img,
+                _ => {
+                    let img = ctx.create_image(
+                        cap_size.0,
+                        cap_size.1,
+                        TextureType::BGRA,
+                        ImageFlags::REPEATX | ImageFlags::REPEATY,
+                        Some(frame_data.data_u8()),
+                    )?;
+                    img
+                }
+            };
+            self.img_size = Some((img, cap_size));
+            img
         };
-        let img = match img_update {
-            Some(img) => img,
-            _ => {
-                let img = ctx.create_image(
-                    cap_size.0,
-                    cap_size.1,
-                    TextureType::BGRA,
-                    ImageFlags::REPEATX | ImageFlags::REPEATY,
-                    Some(frame_data.data_u8()),
-                )?;
-                img
-            }
-        };
-        self.img_size = Some((img, cap_size));
 
         let fill_size = padding_fit_img(cap_size, (width, height));
         let xy = ((width - fill_size.0) / 2.0, (height - fill_size.1) / 2.0);
@@ -88,46 +101,53 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
                 .proc_image(&src_img, 0.6, 0.5, pos_scale)?
         };
 
-        ctx.begin_path();
-        ctx.fill_paint({
-            ImagePattern {
-                img,
-                center: xy.into(),
-                size: fill_size.into(),
-                angle: 0.0,
-                alpha: 1.0,
-            }
-        });
-        ctx.rect(Rect {
-            xy: xy.into(),
-            size: fill_size.into(),
-        });
-        ctx.fill()?;
-
-        ctx.begin_path();
-        ctx.rect((0.0, 0.0, width, height));
-        ctx.rect(Rect {
-            xy: square_xy.into(),
-            size: (square_width, square_width).into(),
-        });
-        ctx.path_winding(WindingSolidity::Hole);
-        ctx.fill_paint(nvgx::Color::rgba(1.0, 1.0, 1.0, 0.2));
-        ctx.fill()?;
-
-        ctx.save();
-        ctx.stroke_paint(nvgx::Color::rgb_i(0x00, 0xBF, 0xA8));
-        ctx.translate(square_xy.0, square_xy.1);
-        for face in faces {
+        {
+            let _draw = span!("Draw");
+            _draw.emit_color(0xff20f0);
             ctx.begin_path();
-            ctx.rect(face.bbox);
-            ctx.stroke()?;
+            ctx.fill_paint({
+                ImagePattern {
+                    img,
+                    center: xy.into(),
+                    size: fill_size.into(),
+                    angle: 0.0,
+                    alpha: 1.0,
+                }
+            });
+            ctx.rect(Rect {
+                xy: xy.into(),
+                size: fill_size.into(),
+            });
+            ctx.fill()?;
+
+            ctx.begin_path();
+            ctx.rect((0.0, 0.0, width, height));
+            ctx.rect(Rect {
+                xy: square_xy.into(),
+                size: (square_width, square_width).into(),
+            });
+            ctx.path_winding(WindingSolidity::Hole);
+            ctx.fill_paint(nvgx::Color::rgba(1.0, 1.0, 1.0, 0.2));
+            ctx.fill()?;
+
+            ctx.save();
+            ctx.stroke_paint(nvgx::Color::rgb_i(0x00, 0xBF, 0xA8));
+            ctx.translate(square_xy.0, square_xy.1);
+            for face in faces {
+                ctx.begin_path();
+                ctx.rect(face.bbox);
+                ctx.stroke()?;
+            }
+            ctx.restore();
         }
-        ctx.restore();
+
         Ok(())
     }
 }
 
 fn main() {
+    tracing_subscriber::fmt::init();
+    Client::start();
     demo::run(
         DemoDraw {
             img_size: None,

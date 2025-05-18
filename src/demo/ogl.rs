@@ -16,8 +16,8 @@ use winit::application::ApplicationHandler;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey, PhysicalKey};
-use winit::window::{Window, WindowAttributes};
 use winit::platform::windows::WindowAttributesExtWindows;
+use winit::window::{Window, WindowAttributes};
 
 use glutin::config::{Config, ConfigTemplateBuilder, GetGlConfig};
 use glutin::context::{
@@ -28,6 +28,9 @@ use glutin::prelude::*;
 use glutin::surface::{Surface, WindowSurface};
 
 use glutin_winit::{DisplayBuilder, GlWindow};
+
+use tracy_client::{frame_mark, span};
+
 pub fn run<D: Demo<nvgx_ogl::Renderer>>(demo: D, title: &str) {
     let event_loop = EventLoop::new().unwrap();
     let template = ConfigTemplateBuilder::new()
@@ -295,7 +298,8 @@ impl<D: Demo<nvgx_ogl::Renderer>> ApplicationHandler for App<D> {
                         .update(window_size.width as f32, window_size.height as f32, context)
                         .unwrap();
                     context.restore();
-
+                    
+                    let _zone = span!("Render");
                     context.save();
                     let duration = Instant::now() - self.start_time;
                     if duration.as_millis() > 1000 {
@@ -323,6 +327,7 @@ impl<D: Demo<nvgx_ogl::Renderer>> ApplicationHandler for App<D> {
                     let gl_context = self.gl_context.as_ref().unwrap();
                     state.window.request_redraw();
                     state.gl_surface.swap_buffers(gl_context).unwrap();
+                    frame_mark();
                 }
             }
             _ => (),
