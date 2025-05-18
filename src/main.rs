@@ -75,6 +75,7 @@ struct DemoDraw {
     face_land_mark: FacelandMark,
     prev_time: Instant,
     frame_time_graph: PerfGraph<64>,
+    inference_time_graph: PerfGraph<64>,
 }
 
 impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
@@ -113,45 +114,49 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             frame_data.data_u8(),
             PixelType::U8x4,
         )?;
-        let faces = self.yolov5n_face.proc_image(&src_img, 0.6, 0.5)?;
 
-        let face_land_marks = {
-            let max_conf_face = faces.iter().max_by(|a, b| a.conf.total_cmp(&b.conf));
-            if let Some(face) = max_conf_face {
-                use std::ops::Add;
-                let yolov5_square_width_img = f32::min(cap_size_f.0, cap_size_f.1);
-                let yolov5_crop_img_size = (yolov5_square_width_img, yolov5_square_width_img);
-                let yolov5_crop_img_offset = (
-                    (cap_size_f.0 - yolov5_crop_img_size.0) / 2.0,
-                    (cap_size_f.1 - yolov5_crop_img_size.1) / 2.0,
-                );
-                let (relative_img_crop, _) =
-                    mk_face_land_mark_crop_from_bbox(face.bbox, yolov5_crop_img_size, 1.5);
-                let abs_img_crop = Rect {
-                    xy: relative_img_crop.xy.add(&yolov5_crop_img_offset.into()),
-                    size: relative_img_crop.size,
-                };
+        let ((faces, face_land_marks), inference_time) = measure_time!({
+            let faces = self.yolov5n_face.proc_image(&src_img, 0.6, 0.5)?;
 
-                let face_land_mark_display_size = (
-                    relative_img_crop.size.width * img_display_scale,
-                    relative_img_crop.size.height * img_display_scale,
-                );
-                let result = self.face_land_mark.proc_image(
-                    &src_img,
-                    abs_img_crop,
-                    face_land_mark_display_size,
-                )?;
+            let face_land_marks = {
+                let max_conf_face = faces.iter().max_by(|a, b| a.conf.total_cmp(&b.conf));
+                if let Some(face) = max_conf_face {
+                    use std::ops::Add;
+                    let yolov5_square_width_img = f32::min(cap_size_f.0, cap_size_f.1);
+                    let yolov5_crop_img_size = (yolov5_square_width_img, yolov5_square_width_img);
+                    let yolov5_crop_img_offset = (
+                        (cap_size_f.0 - yolov5_crop_img_size.0) / 2.0,
+                        (cap_size_f.1 - yolov5_crop_img_size.1) / 2.0,
+                    );
+                    let (relative_img_crop, _) =
+                        mk_face_land_mark_crop_from_bbox(face.bbox, yolov5_crop_img_size, 1.5);
+                    let abs_img_crop = Rect {
+                        xy: relative_img_crop.xy.add(&yolov5_crop_img_offset.into()),
+                        size: relative_img_crop.size,
+                    };
 
-                let display_rect = Rect {
-                    xy: abs_img_crop.xy.mul(img_display_scale),
-                    size: face_land_mark_display_size.into(),
-                };
+                    let face_land_mark_display_size = (
+                        relative_img_crop.size.width * img_display_scale,
+                        relative_img_crop.size.height * img_display_scale,
+                    );
+                    let result = self.face_land_mark.proc_image(
+                        &src_img,
+                        abs_img_crop,
+                        face_land_mark_display_size,
+                    )?;
 
-                result.map(|v| (v, display_rect))
-            } else {
-                None
-            }
-        };
+                    let display_rect = Rect {
+                        xy: abs_img_crop.xy.mul(img_display_scale),
+                        size: face_land_mark_display_size.into(),
+                    };
+
+                    result.map(|v| (v, display_rect))
+                } else {
+                    None
+                }
+            };
+            (faces, face_land_marks)
+        });
 
         {
             let img = {
@@ -270,22 +275,35 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             }
 
             {
+                ctx.reset_transform();
                 let now = Instant::now();
                 let duration = now - std::mem::replace(&mut self.prev_time, now);
                 self.frame_time_graph.update(duration.as_secs_f32());
-                self.frame_time_graph
-                    .render(
-                        ctx,
-                        Rect {
-                            xy: (10.0, 10.0).into(),
-                            size: (200.0, 50.0).into(),
-                        },
-                        Color::rgb_i(0x00, 0xBF, 0xA8),
-                        |v| v * 1000.0 / 100.0,
-                        Some(|v| format!("{:.1} FPS", 1.0 / v)),
-                        Some(|v| format!("{:.1} ms", v * 1000.0)),
-                    )
-                    .unwrap();
+                self.frame_time_graph.render(
+                    ctx,
+                    Rect {
+                        xy: (10.0, 10.0).into(),
+                        size: (200.0, 50.0).into(),
+                    },
+                    Color::rgb_i(0x00, 0xBF, 0xBF),
+                    |v| v * 1000.0 / 100.0,
+                    |v| Some(format!("{:.1} FPS", 1.0 / v)),
+                    |v| Some(format!("{:.1} ms", v * 1000.0)),
+                )?;
+
+                self.inference_time_graph
+                    .update(inference_time.as_secs_f32());
+                self.inference_time_graph.render(
+                    ctx,
+                    Rect {
+                        xy: (220.0, 10.0).into(),
+                        size: (200.0, 50.0).into(),
+                    },
+                    Color::rgb_i(255, 192, 00),
+                    |v| v * 1000.0 / 100.0,
+                    |v| Some(format!("{:.1} ms", v * 1000.0)),
+                    |_| None,
+                )?;
             }
         }
 
@@ -303,7 +321,8 @@ fn main() {
             yolov5n_face: YoloV5Face::new("weights/yolov5n-face-relu.onnx").unwrap(),
             face_land_mark: FacelandMark::new("weights/face_landmarks_detector.onnx").unwrap(),
             prev_time: Instant::now(),
-            frame_time_graph: PerfGraph::new("Frame Time".into()),
+            frame_time_graph: PerfGraph::new("Frame".into()),
+            inference_time_graph: PerfGraph::new("Inference".into()),
         },
         "Yolov5Face-FacelandMark",
     );

@@ -17,25 +17,26 @@ impl<const N: usize> PerfGraph<N> {
             name,
         };
     }
+
+    #[inline]
     pub fn update(&mut self, v: f32) {
         self.values[self.idx % N] = v;
         self.idx += 1;
     }
 
-    #[inline]
     pub fn render<R: RendererDevice, F, FTM, FTS>(
         &self,
         ctx: &mut Context<R>,
         rect: Rect,
         color: Color,
         mut val_norm: F,
-        main_text: Option<FTM>,
-        sub_text: Option<FTS>,
+        main_text: FTM,
+        sub_text: FTS,
     ) -> anyhow::Result<()>
     where
         F: FnMut(f32) -> f32,
-        FTM: FnOnce(f32) -> String,
-        FTS: FnOnce(f32) -> String,
+        FTM: FnOnce(f32) -> Option<String>,
+        FTS: FnOnce(f32) -> Option<String>,
     {
         let average_value = self.values.iter().fold(0.0, |acc, &x| acc + x) / (N as f32);
 
@@ -58,7 +59,7 @@ impl<const N: usize> PerfGraph<N> {
             ctx.line_to((rect.xy.x + x_off, bottom - y_off));
         }
         ctx.line_to((rect.xy.x + rect.size.width, bottom));
-        ctx.fill_paint(nvgx::Color::rgba(color.r, color.g, color.g, 0.5));
+        ctx.fill_paint(nvgx::Color::rgba(color.r, color.g, color.b, 0.5));
         ctx.fill()?;
         {
             ctx.text_align(Align::TOP | Align::LEFT);
@@ -66,23 +67,22 @@ impl<const N: usize> PerfGraph<N> {
             ctx.fill_paint(nvgx::Color::rgba_i(240, 240, 240, 192));
             ctx.text(rect.xy.offset(3.0, 3.0), &self.name)?;
         }
-        if let Some(main_text) = main_text {
+        
+        if let Some(main_text) = main_text(average_value) {
             ctx.text_align(Align::TOP | Align::RIGHT);
             ctx.font_size(20.0);
             ctx.fill_paint(nvgx::Color::rgba_i(240, 240, 240, 192));
-            ctx.text(
-                rect.xy.offset(rect.size.width - 3.0, 3.0),
-                main_text(average_value),
-            )?;
+            ctx.text(rect.xy.offset(rect.size.width - 3.0, 3.0), main_text)?;
         }
-        if let Some(sub_text) = sub_text {
+
+        if let Some(sub_text) = sub_text(average_value) {
             ctx.text_align(Align::BOTTOM | Align::RIGHT);
             ctx.font_size(18.0);
             ctx.fill_paint(nvgx::Color::rgba_i(240, 240, 240, 160));
             ctx.text(
                 rect.xy
                     .offset(rect.size.width - 3.0, rect.size.height - 3.0),
-                sub_text(average_value),
+                sub_text,
             )?;
         }
 

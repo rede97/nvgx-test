@@ -4,6 +4,16 @@ use image::{ImageBuffer, Rgb};
 use ndarray::ArrayView3;
 use nvgx::Rect;
 
+#[macro_export]
+macro_rules! measure_time {
+    ($block:block) => {{
+        let start = std::time::Instant::now();
+        let result = $block;
+        let duration = start.elapsed();
+        (result, duration)
+    }};
+}
+
 #[allow(unused)]
 pub fn save_ndarray_as_png(array: ArrayView3<f32>, path: &str) -> Result<(), image::ImageError> {
     let (_, height, width) = array.dim();
