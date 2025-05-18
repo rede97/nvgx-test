@@ -1,13 +1,12 @@
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
-use image::{ImageBuffer, Rgb};
-use ndarray::{Array4, ArrayView, ArrayView3};
+use ndarray::{Array4, ArrayView};
 use ndarray::{Axis, s};
 use ort::execution_providers::{CPUExecutionProvider, DirectMLExecutionProvider};
 use ort::inputs;
 use ort::session::Session;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use result::YoloResult;
-use std::ops::Mul;
 use std::path::Path;
 
 use tracy_client::span;
@@ -20,27 +19,7 @@ pub struct YoloV5Face {
     resizer: Resizer,
     pub input_shape: (usize, usize),
     pub output_shape: (usize, usize, usize),
-}
-
-#[allow(unused)]
-pub fn save_ndarray_as_png(array: ArrayView3<f32>, path: &str) -> Result<(), image::ImageError> {
-    let (_, height, width) = array.dim();
-    let mut img = ImageBuffer::new(width as u32, height as u32);
-
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        let r = (array[[0, y as usize, x as usize]]
-            .mul(255.0)
-            .clamp(0., 255.)) as u8;
-        let g = (array[[1, y as usize, x as usize]]
-            .mul(255.0)
-            .clamp(0., 255.)) as u8;
-        let b = (array[[2, y as usize, x as usize]]
-            .mul(255.0)
-            .clamp(0., 255.)) as u8;
-        *pixel = Rgb([r, g, b]);
-    }
-
-    img.save(path)
+    pub pos_scale: (f32, f32),
 }
 
 impl YoloV5Face {
@@ -50,21 +29,24 @@ impl YoloV5Face {
                 DirectMLExecutionProvider::default().build(),
                 CPUExecutionProvider::default().build(),
             ])?
-            // .with_inter_threads(4)?
-            // .with_parallel_execution(true)?
-            // .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)?
-            .commit_from_file(model).expect("yolov5 model");
+            .with_inter_threads(4)?
+            .with_parallel_execution(true)?
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)?
+            .commit_from_file(model)
+            .expect("yolov5 model");
 
         let dims = &session.inputs[0].input_type.tensor_dimensions().unwrap()[2..];
         let input_shape = (dims[0] as usize, dims[1] as usize);
         let dims = session.outputs[0].output_type.tensor_dimensions().unwrap();
         let output_shape = (dims[0] as usize, dims[1] as usize, dims[2] as usize);
+        let pos_scale = (1.0 / input_shape.0 as f32, 1.0 / input_shape.1 as f32);
 
         Ok(Self {
             session,
             input_shape,
             output_shape,
             resizer: Resizer::new(),
+            pos_scale,
         })
     }
 
@@ -73,18 +55,17 @@ impl YoloV5Face {
         src_image: &impl IntoImageView,
         conf_th: f32,
         iou_th: f32,
-        pos_scale: (f32, f32),
     ) -> anyhow::Result<Vec<YoloResult>> {
         let _yolov5face = span!("Yolov5 Face");
         _yolov5face.emit_color(0x2f60fe);
-        let mut dst_img = Image::new(
-            self.input_shape.0 as u32,
-            self.input_shape.1 as u32,
-            fast_image_resize::PixelType::U8x4,
-        );
 
         let input_array: Array4<f32> = {
             let _preproc = span!("Pre Proc");
+            let mut dst_img = Image::new(
+                self.input_shape.0 as u32,
+                self.input_shape.1 as u32,
+                fast_image_resize::PixelType::U8x4,
+            );
             self.resizer.resize(
                 src_image,
                 &mut dst_img,
@@ -97,9 +78,18 @@ impl YoloV5Face {
             )?
             .permuted_axes([0, 3, 1, 2]); // [1, w, h, 3] -> [1, 3, w, h]
 
-            array_view
-                .slice(s![.., 0..3;-1, .., ..])
-                .map(|v| *v as f32 / 255.0) // bgr@u8 -> rgb@f32
+            let rgb_array_view = array_view.slice(s![.., 0..3;-1, .., ..]);
+
+            let mut input_array: Array4<f32> =
+                unsafe { Array4::uninit(rgb_array_view.dim()).assume_init() };
+            rgb_array_view
+                .axis_iter(Axis(1))
+                .zip(input_array.axis_iter_mut(Axis(1)))
+                .par_bridge()
+                .for_each(|(old, mut new)| {
+                    new.zip_mut_with(&old, |new, old| *new = *old as f32 / 255.0);
+                });
+            input_array
         };
         let outputs = {
             let _inference = span!("Inference");
@@ -108,12 +98,12 @@ impl YoloV5Face {
         {
             // [batch_size][4032][16{xyxy:0..4, conf:4, landmarks:5..15, cls:15}]
             let _post_proc = span!("Post Proc");
-            let output = &outputs[0].try_extract_tensor::<f32>().unwrap();
+            let output = outputs[0].try_extract_tensor::<f32>().unwrap();
             let output_batch = output.slice(s![0, .., ..]);
 
             let mut all_results = Vec::new();
             for elem in output_batch.axis_iter(Axis(0)) {
-                if let Some(e) = YoloResult::new(elem, conf_th, pos_scale) {
+                if let Some(e) = YoloResult::new(elem, conf_th, self.pos_scale) {
                     Self::nms_append(&mut all_results, e, iou_th);
                 }
             }

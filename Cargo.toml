@@ -9,7 +9,6 @@ wgpu = ["nvgx-wgpu"]
 ogl = ["nvgx-ogl"]
 wirelines = ["nvgx/wirelines"]
 example-single-inst = []
-save-fps = []
 
 [dependencies]
 nvgx = { version = "0.3.3" }
