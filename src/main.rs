@@ -210,27 +210,27 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             ctx.reset_transform();
             ctx.translate(img_display_offset.x, img_display_offset.y);
 
+            // draw yolov5 area
+            // yolov5_display_width = min(cap_size_f.0, cap_size_f.1) * img_display_scale
+            let yolov5_display_width = f32::min(img_display_size.0, img_display_size.1);
+            let yolov5_display_offset: Point = (
+                (img_display_size.0 - yolov5_display_width) / 2.0,
+                (img_display_size.1 - yolov5_display_width) / 2.0,
+            )
+                .into();
+            {
+                // camera yolov5 mask
+                ctx.begin_path();
+                ctx.rect((0.0, 0.0, img_display_size.0, img_display_size.1));
+                ctx.rect(Rect {
+                    xy: yolov5_display_offset.into(),
+                    size: (yolov5_display_width, yolov5_display_width).into(),
+                });
+                ctx.path_winding(WindingSolidity::Hole);
+                ctx.fill_paint(nvgx::Color::rgba(1.0, 1.0, 1.0, 0.2));
+                ctx.fill()?;
+            }
             if false {
-                // draw yolov5 area
-                // yolov5_display_width = min(cap_size_f.0, cap_size_f.1) * img_display_scale
-                let yolov5_display_width = f32::min(img_display_size.0, img_display_size.1);
-                let yolov5_display_offset: Point = (
-                    (img_display_size.0 - yolov5_display_width) / 2.0,
-                    (img_display_size.1 - yolov5_display_width) / 2.0,
-                )
-                    .into();
-                {
-                    // camera yolov5 mask
-                    ctx.begin_path();
-                    ctx.rect((0.0, 0.0, img_display_size.0, img_display_size.1));
-                    ctx.rect(Rect {
-                        xy: yolov5_display_offset.into(),
-                        size: (yolov5_display_width, yolov5_display_width).into(),
-                    });
-                    ctx.path_winding(WindingSolidity::Hole);
-                    ctx.fill_paint(nvgx::Color::rgba(1.0, 1.0, 1.0, 0.2));
-                    ctx.fill()?;
-                }
                 // draw face rect
                 ctx.save();
                 ctx.stroke_paint(nvgx::Color::rgb_i(0x00, 0xBF, 0xA8));
@@ -322,8 +322,8 @@ fn main() {
             face_land_mark: FacelandMark::new("weights/face_landmarks_detector.onnx").unwrap(),
             prev_time: Instant::now(),
             frame_time_graph: PerfGraph::new("Frame".into()),
-            inference_time_graph: PerfGraph::new("Inference".into()),
+            inference_time_graph: PerfGraph::new("AI Inference".into()),
         },
-        "Yolov5Face-FacelandMark",
+        "Yolov5Face-FacelandMark(MobileNet)@Google",
     );
 }
