@@ -1,5 +1,5 @@
 mod demo;
-mod faceland;
+mod face_landmark;
 mod perf;
 mod utils;
 mod yolov5_face;
@@ -7,7 +7,7 @@ mod yolov5_face;
 use std::time::Instant;
 
 use anyhow::Error;
-use faceland::FacelandMark;
+use face_landmark::FaceLandmark;
 use fast_image_resize::{PixelType, images::ImageRef};
 use num_traits::AsPrimitive;
 use nvgx::*;
@@ -72,10 +72,11 @@ struct DemoDraw {
     img_size: Option<(ImageId, (u32, u32))>,
     camera: kamera::Camera,
     yolov5n_face: YoloV5Face,
-    face_land_mark: FacelandMark,
+    face_land_mark: FaceLandmark,
     prev_time: Instant,
     frame_time_graph: PerfGraph<64>,
     inference_time_graph: PerfGraph<64>,
+    render_time_graph: PerfGraph<64>,
 }
 
 impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
@@ -88,6 +89,9 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
     fn update(&mut self, width: f32, height: f32, ctx: &mut Context<R>) -> anyhow::Result<()> {
         let _update_zone = span!("Frame");
         _update_zone.emit_color(0xeeeeff);
+        self.render_time_graph
+            .update((Instant::now() - self.prev_time).as_secs_f32());
+
         let frame = {
             let _camera = span!("Camera");
             let Some(frame) = self.camera.wait_for_frame() else {
@@ -96,7 +100,6 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
             frame
         };
         let frame_data = frame.data();
-
         let cap_size = frame.size_u32();
 
         let cap_size_f = (cap_size.0 as f32, cap_size.1 as f32);
@@ -276,6 +279,7 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
 
             {
                 ctx.reset_transform();
+
                 let now = Instant::now();
                 let duration = now - std::mem::replace(&mut self.prev_time, now);
                 self.frame_time_graph.update(duration.as_secs_f32());
@@ -300,7 +304,19 @@ impl<R: RendererDevice> demo::Demo<R> for DemoDraw {
                         size: (200.0, 50.0).into(),
                     },
                     Color::rgb_i(255, 192, 00),
-                    |v| v * 1000.0 / 100.0,
+                    |v| v * 1000.0 / 50.0,
+                    |v| Some(format!("{:.1} ms", v * 1000.0)),
+                    |_| None,
+                )?;
+
+                self.render_time_graph.render(
+                    ctx,
+                    Rect {
+                        xy: (430.0, 10.0).into(),
+                        size: (200.0, 50.0).into(),
+                    },
+                    Color::rgb_i(0xFF, 0x64, 0x64),
+                    |v| v * 1000.0 / 5.0,
                     |v| Some(format!("{:.1} ms", v * 1000.0)),
                     |_| None,
                 )?;
@@ -319,10 +335,11 @@ fn main() {
             img_size: None,
             camera: kamera::Camera::new_default_device(),
             yolov5n_face: YoloV5Face::new("weights/yolov5n-face-relu.onnx").unwrap(),
-            face_land_mark: FacelandMark::new("weights/face_landmarks_detector.onnx").unwrap(),
-            prev_time: Instant::now(),
+            face_land_mark: FaceLandmark::new("weights/face_landmarks_detector.onnx").unwrap(),
             frame_time_graph: PerfGraph::new("Frame".into()),
             inference_time_graph: PerfGraph::new("AI Inference".into()),
+            render_time_graph: PerfGraph::new("GPU Render".into()),
+            prev_time: Instant::now(),
         },
         "Yolov5Face-FacelandMark(MobileNet)@Google",
     );

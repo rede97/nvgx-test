@@ -14,18 +14,18 @@ use tracy_client::span;
 
 use crate::utils::sigmoid;
 
-pub struct FacelandMarkResult {
+pub struct FaceLandmarkResult {
     pub points: Vec<(f32, f32, f32)>,
     pub score: f32,
     pub tongue: f32,
 }
 
-pub struct FacelandMark {
+pub struct FaceLandmark {
     session: Session,
     resizer: Resizer,
 }
 
-impl FacelandMark {
+impl FaceLandmark {
     pub const INPUT_SIZE: usize = 256;
     pub const MARKS_NUM: usize = 478;
 
@@ -51,7 +51,7 @@ impl FacelandMark {
         src_image: &impl IntoImageView,
         face_rect: Rect,
         scale_to: (f32, f32),
-    ) -> anyhow::Result<Option<FacelandMarkResult>> {
+    ) -> anyhow::Result<Option<FaceLandmarkResult>> {
         let _flm = span!("FacelandMark Face");
         _flm.emit_color(0xfe602f);
         let input_array: Array4<f32> = {
@@ -125,7 +125,7 @@ impl FacelandMark {
                 .axis_iter(Axis(0))
                 .map(|p| (pos_scale.0 * p[0], pos_scale.1 * p[1], p[2]))
                 .collect();
-            return Ok(Some(FacelandMarkResult {
+            return Ok(Some(FaceLandmarkResult {
                 points,
                 score,
                 tongue,
