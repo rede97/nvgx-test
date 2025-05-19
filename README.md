@@ -11,7 +11,7 @@ python copy_runtime.py
 ```
 
 ## Inference Model
-* [YoloV5 Face](https://github.com/rede97?tab=repositories) find for detect face position
+* [YoloV5 Face](https://github.com/rede97?tab=repositories) detect face position
 * [Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) from [Google Mediapipe](https://ai.google.dev/edge/mediapipe/solutions/guide) Genarate 478 landmarks
     * Convert TFlite to ONNX: [tensorflow-onnx](https://github.com/onnx/tensorflow-onnx)
 
